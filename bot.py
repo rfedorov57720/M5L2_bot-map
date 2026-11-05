@@ -7,6 +7,17 @@ bot = telebot.TeleBot(TOKEN)
 manager = DB_Map(DATABASE)
 manager.create_user_table()
 
+# Выбранный цвет маркеров по пользователю
+user_colors = {}
+
+COLOR_MAP = {
+    'red': '🔴 Красный',
+    'blue': '🔵 Синий',
+    'green': '🟢 Зелёный',
+    'orange': '🟠 Оранжевый',
+    'purple': '🟣 Фиолетовый',
+}
+
 
 @bot.message_handler(commands=['start'])
 def handle_start(message):
@@ -21,8 +32,26 @@ def handle_help(message):
         "/show_city <город> — показать город на карте (на английском)\n"
         "/remember_city <город> — сохранить город в избранное\n"
         "/show_my_cities — показать все сохранённые города\n"
-        "/all — показать все города из базы на карте"
+        "/all — показать все города из базы на карте\n"
+        "/color — выбрать цвет маркеров"
     )
+
+
+@bot.message_handler(commands=['color'])
+def handle_color(message):
+    markup = telebot.types.InlineKeyboardMarkup()
+    for eng, rus in COLOR_MAP.items():
+        markup.add(telebot.types.InlineKeyboardButton(rus, callback_data=f"color:{eng}"))
+    bot.send_message(message.chat.id, "Выберите цвет маркеров:", reply_markup=markup)
+
+
+@bot.callback_query_handler(func=lambda call: call.data.startswith('color:'))
+def handle_color_choice(call):
+    color = call.data.split(':')[1]
+    user_colors[call.message.chat.id] = color
+    bot.answer_callback_query(call.id, f"Выбран цвет: {COLOR_MAP[color]}")
+    bot.edit_message_text(f"Цвет маркеров: {COLOR_MAP[color]}",
+                          call.message.chat.id, call.message.message_id)
 
 
 @bot.message_handler(commands=['show_city'])
@@ -40,8 +69,9 @@ def handle_show_city(message):
 
     bot.send_message(message.chat.id, f"Генерирую карту для «{city_name}»...")
     path = f"city_{message.chat.id}.png"
+    color = user_colors.get(message.chat.id, 'red')
     try:
-        manager.create_grapf(path, [city_name])
+        manager.create_grapf(path, [city_name], marker_color=color, show_details=True)
         with open(path, 'rb') as photo:
             bot.send_photo(message.chat.id, photo, caption=f"Город: {city_name}")
     except Exception as e:
@@ -74,8 +104,9 @@ def handle_show_visited_cities(message):
 
     bot.send_message(message.chat.id, f"Генерирую карту ваших городов ({len(cities)})...")
     path = f"my_cities_{message.chat.id}.png"
+    color = user_colors.get(message.chat.id, 'red')
     try:
-        manager.create_grapf(path, cities)
+        manager.create_grapf(path, cities, marker_color=color)
         with open(path, 'rb') as photo:
             bot.send_photo(message.chat.id, photo, caption="Ваши сохранённые города")
     except Exception as e:
@@ -87,7 +118,6 @@ def handle_show_visited_cities(message):
 
 @bot.message_handler(commands=['all'])
 def handle_all_cities(message):
-    # Получаем все города из базы
     conn = __import__('sqlite3').connect(DATABASE)
     with conn:
         cursor = conn.cursor()
@@ -101,8 +131,9 @@ def handle_all_cities(message):
 
     bot.send_message(message.chat.id, f"Генерирую карту всех городов ({len(all_cities)})...")
     path = f"all_cities_{message.chat.id}.png"
+    color = user_colors.get(message.chat.id, 'red')
     try:
-        manager.create_grapf(path, all_cities)
+        manager.create_grapf(path, all_cities, marker_color=color)
         with open(path, 'rb') as photo:
             bot.send_photo(message.chat.id, photo, caption=f"Всего городов в базе: {len(all_cities)}")
     except Exception as e:
